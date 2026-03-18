@@ -48,6 +48,37 @@ Response modes:
 - `fast` (default): deterministic rule-based answer over retrieved context (assessment mode, designed for <100ms total)
 - `llm`: uses `ChatOpenAI` for richer generation (latency depends on provider/network)
 
+## Model Choice and LangChain Rationale
+
+### Embedding model (`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`)
+
+- Why this model:
+  - Strong multilingual coverage including Bangla.
+  - Good semantic quality with compact embedding size (384 dims), which keeps indexing and retrieval fast.
+  - Practical latency/memory profile for local or containerized deployment.
+- Trade-off:
+  - Larger multilingual models may improve recall slightly but usually add compute/memory overhead that is not ideal for strict latency targets.
+
+### LLM model (`gpt-4o-mini` by default)
+
+- Why this model:
+  - Good balance of response quality, speed, and cost for production-style chat responses.
+  - Works well for concise Bangla product-answer generation over retrieved context.
+- Operational strategy:
+  - `fast` mode avoids remote LLM dependency for strict latency paths.
+  - `llm` mode uses `gpt-4o-mini` (or another compatible model) when richer natural language response quality is preferred.
+
+### Why LangChain (`langchain-openai` + `ChatOpenAI`)
+
+- Standardized model interface:
+  - Keeps LLM invocation clean and consistent (`ainvoke`) without provider-specific request wiring in business logic.
+- Easier provider/model swap:
+  - OpenAI-compatible endpoint changes can be handled by config (`OPENAI_BASE_URL`) while preserving call flow.
+- Maintainability:
+  - Message abstractions (`SystemMessage`, `HumanMessage`, `AIMessage`) make multi-turn prompt assembly clearer and safer to extend.
+- Production pragmatism:
+  - LangChain is used selectively for LLM orchestration; retrieval, rewriting, and ranking remain custom modules for speed and control.
+
 ## Setup
 
 1. Create and activate virtual environment.
