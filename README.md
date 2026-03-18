@@ -7,6 +7,15 @@ Q2: দাম কত টাকা?
 
 Core requirement: Q2 should be resolved as নুডুলসের দাম কত টাকা? and total RAG response should stay under 100ms in assessment mode.
 
+## Business Impact and Engineering Depth
+
+- Faster customer answer cycles: context-aware follow-up handling reduces clarification turns and improves first-response usefulness for price/product queries.
+- Higher retrieval precision in Bangla: hybrid semantic + lexical strategy reduces irrelevant matches and improves trust in product answers.
+- Latency-aware product design: dual response modes (`fast` for strict latency paths, `llm` for richer generation) allow balancing UX speed vs. response richness by use case.
+- Operational transparency for teams: structured response diagnostics (`was_rewritten`, `tracked_entity`, `retrieval_ms`, `llm_ms`, `total_ms`) improve debugging, QA, and SLA monitoring.
+- Scalable architecture boundaries: indexing, retrieval, rewriting, session context, API, and UI are cleanly separated for easier maintenance and independent optimization.
+- Deployment readiness: local, API-first, Streamlit UI, and Docker Compose workflows support rapid prototyping and production-oriented rollout paths.
+
 ## Current Status
 
 - Context-aware rewriting: implemented
@@ -183,9 +192,3 @@ Response includes:
 - `llm` mode latency depends on provider/model and typically exceeds 100ms over network calls.
 - If `OPENAI_API_KEY` is missing, system falls back to rule-based response generation.
 
-## Why This Meets The Assessment
-
-- Handles multi-turn coreference in Bangla using deterministic rewriting.
-- Prevents generic semantic retrieval misses by adding lexical fallback re-ranking.
-- Provides clear test output for the exact Q1/Q2 scenario.
-- Uses clean modular Python project structure suitable for production hardening.
