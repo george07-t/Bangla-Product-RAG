@@ -88,7 +88,7 @@ async def run():
     # ── Summary ─────────────────────────────────────────────────────────────
     print("=" * 60)
     if all_pass:
-        print("  🎉 ALL TESTS PASSED — System ready to submit!")
+        print("  🎉 ALL TESTS PASSED")
     else:
         print("  ⚠️  Some tests failed — check the output above")
     print("=" * 60)
