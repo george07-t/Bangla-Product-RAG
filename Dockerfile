@@ -11,8 +11,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
-RUN python -m pip install --upgrade pip \
-    && pip install -r requirements.txt
+
+RUN grep -vE '^(torch|torchvision|torchaudio)([<>=].*)?$' requirements.txt > requirements.docker.txt \
+    && python -m pip install --upgrade pip \
+    && pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.6.0+cpu \
+    && pip install --no-cache-dir -r requirements.docker.txt
 
 COPY . .
 
