@@ -1,17 +1,17 @@
 services:
-	- type: web
-		name: bangla-product-rag-api
-		env: docker
-		plan: free
-		region: oregon
-		dockerfilePath: ./Dockerfile
-		dockerContext: .
-		healthCheckPath: /health
-		autoDeploy: true
-		envVars:
-			- key: OPENAI_API_KEY
-				sync: false
-			- key: OPENAI_BASE_URL
-				value: https://api.openai.com/v1
-			- key: PYTHONUNBUFFERED
-				value: "1"
+  - type: web
+    name: bangla-product-rag-api
+    env: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        value: https://api.openai.com/v1
+      - key: PYTHONUNBUFFERED
+        value: "1"
