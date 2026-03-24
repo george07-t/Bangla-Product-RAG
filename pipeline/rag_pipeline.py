@@ -181,16 +181,27 @@ def _rule_based_answer(products: List[dict], query: str) -> str:
         return "দুঃখিত, আপনার চাওয়া পণ্যটি আমাদের কাছে পাওয়া যাচ্ছে না।"
 
     top = _select_product_for_query(products, query)
+    top_price = top.get('price')
+    has_price = isinstance(top_price, (int, float)) and float(top_price) > 0
+
     if any(kw in query for kw in ["দাম", "মূল্য", "কত", "price"]):
         poss = _to_possessive(top['name'])
+        if not has_price:
+            return f"হ্যাঁ, {poss} তথ্য আমাদের কাছে আছে, তবে এই মুহূর্তে দামের তথ্য পাওয়া যাচ্ছে না।"
         return (
             f"হ্যাঁ, {poss} দাম {top['price']} টাকা প্রতি {top['unit']}।"
         )
     if any(kw in query for kw in ["আছে", "বিক্রি", "পাওয়া"]):
+        if not has_price:
+            return (
+                f"হ্যাঁ, আমরা {top['name']} বিক্রি করি। দামের তথ্য এই মুহূর্তে পাওয়া যাচ্ছে না।"
+            )
         return (
             f"হ্যাঁ, আমরা {top['name']} বিক্রি করি। "
             f"মূল্য: {top['price']} টাকা প্রতি {top['unit']}।"
         )
+    if not has_price:
+        return f"{top['name']} পাওয়া যাচ্ছে। দামের তথ্য এই মুহূর্তে পাওয়া যাচ্ছে না।"
     return (
         f"{top['name']} পাওয়া যাচ্ছে। মূল্য: {top['price']} টাকা প্রতি {top['unit']}।"
     )

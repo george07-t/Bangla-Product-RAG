@@ -12,6 +12,8 @@ import os
 import pickle
 import time
 import re
+import math
+from collections import Counter
 import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
@@ -35,6 +37,10 @@ STOP_WORDS = {
 KEYWORD_BOOST = 0.25   # added to score when product name word matches query
 EXACT_BOOST   = 0.40   # added when full product base name is in query
 LEXICAL_MATCH_BOOST = 1.20  # strong signal for exact word match in product name
+BM25_WEIGHT = 0.35
+BM25_TOP_M = 30
+BM25_K1 = 1.5
+BM25_B = 0.75
 
 
 def _normalize_tokens(text: str) -> list[str]:
@@ -60,6 +66,10 @@ class FAISSRetriever:
         self._model: SentenceTransformer | None = None
         self._index: faiss.Index | None = None
         self._products: List[Dict] | None = None
+        self._bm25_doc_freq: Dict[str, int] = {}
+        self._bm25_doc_tf: List[Counter] = []
+        self._bm25_doc_len: List[int] = []
+        self._bm25_avgdl: float = 0.0
 
     def load(self):
         """Load model + index into memory. Call once at startup."""
@@ -79,7 +89,56 @@ class FAISSRetriever:
         with open(META_PATH, "rb") as f:
             self._products = pickle.load(f)
 
+        self._build_bm25_stats()
+
         print(f"✅ Index loaded: {self._index.ntotal} vectors")
+
+    def _build_bm25_stats(self):
+        """Build lightweight BM25 stats over product name + description."""
+        self._bm25_doc_freq = {}
+        self._bm25_doc_tf = []
+        self._bm25_doc_len = []
+
+        for product in self._products:
+            text = f"{product.get('name', '')} {product.get('description', '')}"
+            tokens = _normalize_tokens(text)
+            tf = Counter(tokens)
+            self._bm25_doc_tf.append(tf)
+            self._bm25_doc_len.append(len(tokens))
+
+            for token in tf:
+                self._bm25_doc_freq[token] = self._bm25_doc_freq.get(token, 0) + 1
+
+        self._bm25_avgdl = (sum(self._bm25_doc_len) / len(self._bm25_doc_len)) if self._bm25_doc_len else 0.0
+
+    def _bm25_scores(self, query_tokens: List[str]) -> List[float]:
+        """Return BM25 score per document index."""
+        n_docs = len(self._bm25_doc_tf)
+        if not query_tokens or n_docs == 0 or self._bm25_avgdl <= 0:
+            return [0.0] * n_docs
+
+        scores = [0.0] * n_docs
+        query_terms = [q for q in query_tokens if q not in STOP_WORDS]
+        if not query_terms:
+            return scores
+
+        for term in query_terms:
+            df = self._bm25_doc_freq.get(term, 0)
+            if df == 0:
+                continue
+
+            idf = math.log(1 + ((n_docs - df + 0.5) / (df + 0.5)))
+
+            for idx, tf in enumerate(self._bm25_doc_tf):
+                f = tf.get(term, 0)
+                if f == 0:
+                    continue
+
+                dl = self._bm25_doc_len[idx]
+                denom = f + BM25_K1 * (1 - BM25_B + BM25_B * (dl / self._bm25_avgdl))
+                scores[idx] += idf * ((f * (BM25_K1 + 1)) / denom)
+
+        return scores
 
     def retrieve(self, query: str, top_k: int = 5) -> tuple[List[Dict], float]:
         """
@@ -99,6 +158,9 @@ class FAISSRetriever:
         # Fetch a wider candidate pool so keyword boost has room to re-rank
         pool = min(top_k * 6, self._index.ntotal)
         scores, indices = self._index.search(query_vec, pool)
+
+        # BM25 signal across full catalog
+        bm25_scores = self._bm25_scores(_normalize_tokens(query))
 
         # ── Step 2: Keyword boost re-ranking ───────────────────────────────
         # Extract meaningful words from the query (non-stopwords)
@@ -128,11 +190,32 @@ class FAISSRetriever:
                     boost += EXACT_BOOST
                     break
 
-            product["_score"] = base_score + boost
+            bm25_boost = BM25_WEIGHT * bm25_scores[idx]
+            product["_score"] = base_score + boost + bm25_boost
             product["_base_score"] = base_score
             product["_boost"] = boost
+            product["_bm25"] = bm25_boost
             candidates.append(product)
             seen_product_ids.add(product.get("id"))
+
+        # Add BM25-only strong candidates to improve noun/entity precision
+        if bm25_scores:
+            top_bm25_indices = np.argsort(np.array(bm25_scores))[::-1][:BM25_TOP_M]
+            for idx in top_bm25_indices:
+                if bm25_scores[idx] <= 0:
+                    break
+
+                product = self._products[idx]
+                if product.get("id") in seen_product_ids:
+                    continue
+
+                bm = product.copy()
+                bm["_base_score"] = 0.0
+                bm["_boost"] = 0.0
+                bm["_bm25"] = BM25_WEIGHT * bm25_scores[idx]
+                bm["_score"] = bm["_bm25"]
+                candidates.append(bm)
+                seen_product_ids.add(bm.get("id"))
 
         # ── Step 3: Lexical fallback pass over full catalog ─────────────────
         # FAISS may miss explicit noun matches in first-pass candidates.

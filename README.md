@@ -1,9 +1,15 @@
 # Bangla Product RAG - Context-Aware Product Search
 
-A context-aware Bangla RAG system for product queries, designed for the self-assessment scenario:
+A context-aware Bangla RAG system for product queries.
 
-Q1: আপনাদের কোম্পানি কি নুডুলস বিক্রি করে?
-Q2: দাম কত টাকা?
+Example questions:
+
+- আপনাদের কাছে নুডুলস আছে?
+- দাম কত?
+- ওয়ারেন্টি আছে?
+- ক্যাশ অন ডেলিভারি আছে?
+- কোনো অফার আছে?
+- ডেলিভারি কত দ্রুত?
 
 Core requirement: Q2 should be resolved as নুডুলসের দাম কত টাকা? and total RAG response should stay under 100ms in assessment mode.
 
@@ -15,26 +21,6 @@ Core requirement: Q2 should be resolved as নুডুলসের দাম �
 - Operational transparency for teams: structured response diagnostics (`was_rewritten`, `tracked_entity`, `retrieval_ms`, `llm_ms`, `total_ms`) improve debugging, QA, and SLA monitoring.
 - Scalable architecture boundaries: indexing, retrieval, rewriting, session context, API, and UI are cleanly separated for easier maintenance and independent optimization.
 - Deployment readiness: local, API-first, Streamlit UI, and Docker Compose workflows support rapid prototyping and production-oriented rollout paths.
-
-## Current Status
-
-- Context-aware rewriting: implemented
-- Retrieval latency target (<100ms): passing
-- Scenario test: passing
-- FastAPI API server: implemented
-- OpenAI key loading from .env: fixed
-
-## Project Structure
-
-- `main.py` - FastAPI app and endpoints
-- `pipeline/rag_pipeline.py` - end-to-end orchestration
-- `conversation/context_manager.py` - session state and turn tracking
-- `retriever/query_rewriter.py` - rule-based coreference-aware rewriting
-- `retriever/faiss_retriever.py` - FAISS retrieval with lexical re-ranking fallback
-- `indexer/build_index.py` - offline embedding + FAISS index build
-- `data/generate_products.py` - 5000-product dataset generation
-- `tests/test_scenario.py` - self-assessment scenario test
-- `data.txt` - assessment description/reference text
 
 ## Architecture
 
@@ -79,9 +65,9 @@ Response modes:
 - Production pragmatism:
   - LangChain is used selectively for LLM orchestration; retrieval, rewriting, and ranking remain custom modules for speed and control.
 
-## Setup
+## Minimal Setup
 
-1. Create and activate virtual environment.
+1. Activate virtual environment.
 
 Windows PowerShell:
 ```bash
@@ -106,120 +92,84 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 HF_TOKEN=your_hf_token_optional
 ```
 
-## Build Dataset and Index
+## Dataset Preparation (Knowledge_Bank Primary)
 
-1. Generate dataset (exactly 5000 products).
-```bash
-python data/generate_products.py
+1. Preprocess `Knowledge_Bank.txt` (first-pass dedupe + canonical merge + category policy).
+```powershell
+python .\data\preprocess_knowledge_bank.py
 ```
 
-2. Build FAISS index.
-```bash
+2. Rebuild FAISS index.
+```powershell
 python -m indexer.build_index
 ```
 
-Expected index size after rebuild: 5000 vectors.
-
-## Run Tests
-
-```bash
-python -m tests.test_scenario
+Optional synthetic dataset override:
+```powershell
+python .\data\generate_products.py
+python -m indexer.build_index
 ```
 
-Expected:
-- Q1 not rewritten
-- Q2 rewritten
-- Q2 rewritten query contains নুডুলস
-- Retrieval < 100ms
-- Total Q2 < 100ms (fast mode)
+## Run
 
-## Run Server
-
-```bash
+1. Start API server.
+```powershell
 python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Open:
-- `http://localhost:8000`
-- `http://localhost:8000/docs`
-
-## Streamlit UI (FastAPI on 8000)
-
-1. Start FastAPI in one terminal:
-```bash
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-2. Start Streamlit in another terminal:
-```bash
+2. Optional Streamlit UI (new terminal).
+```powershell
 python -m streamlit run streamlit_app.py --server.port 8501
 ```
 
-3. Open UI:
-- `http://localhost:8501`
+## Run with Docker
 
-The sidebar lets you set:
-- FastAPI base URL (default: `http://127.0.0.1:8000`)
-- `response_mode` (`fast` or `llm`)
-- `top_k`, `llm_model`, and `session_id`
+1. Ensure `.env` exists (required by `docker-compose.yml` `env_file`).
+```powershell
+copy .env.example .env
+```
 
-## Docker Deployment
-
-This project includes a production-friendly container setup:
-- `Dockerfile`
-- `docker-compose.yml`
-
-Services:
-- `api` on port `8000`
-- `streamlit` on port `8501`
-
-Run both services:
-```bash
+2. Build and run API + Streamlit.
+```powershell
 docker compose up --build
 ```
 
-Run in background:
-```bash
+3. Run in background (optional).
+```powershell
 docker compose up --build -d
 ```
 
-Stop services:
-```bash
+4. Stop services.
+```powershell
 docker compose down
 ```
 
-Open:
+5. Open services.
+- API: `http://localhost:8000`
 - API docs: `http://localhost:8000/docs`
-- Streamlit UI: `http://localhost:8501`
+- Streamlit: `http://localhost:8501`
 
-Note: In Docker, Streamlit uses `API_BASE_URL=http://api:8000` automatically via Compose.
+Notes:
+- Docker automatically runs:
+  - `python data/preprocess_knowledge_bank.py`
+  - `python -m indexer.build_index`
+  before starting the API server.
+- If startup is slow, it is expected because preprocessing + indexing run inside the container.
+- `.dockerignore` excludes local env/cache files (`.venv`, `__pycache__`, logs), so image context stays clean.
 
-## API
+## Test
 
-### POST `/chat`
-
-Request:
-```json
-{
-  "message": "দাম কত টাকা?",
-  "session_id": "sess_abc123",
-  "top_k": 5,
-  "llm_model": "gpt-4o-mini",
-  "response_mode": "fast"
-}
+Run scenario test:
+```powershell
+python -m tests.test_scenario
 ```
 
-Response includes:
-- `original_query`
-- `rewritten_query`
-- `was_rewritten`
-- `retrieved_products`
-- `retrieval_ms`, `llm_ms`, `total_ms`
-- `tracked_entity`
-
-## Notes on Latency
-
-- `fast` mode is optimized for <100ms total response in this assessment scenario.
-- `llm` mode latency depends on provider/model and typically exceeds 100ms over network calls.
-- If `OPENAI_API_KEY` is missing, system falls back to rule-based response generation.
+Manual API checks:
+- Open: `http://localhost:8000/docs`
+- Test queries such as:
+  - `আপনাদের কাছে নুডুলস আছে?`
+  - `দাম কত?`
+  - `ওয়ারেন্টি আছে?`
+  - `ক্যাশ অন ডেলিভারি আছে?`
+  - `কোনো অফার আছে?`
 
