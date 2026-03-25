@@ -48,7 +48,7 @@ DIGITAL_SERVICE_KEYWORDS = {
 }
 
 CATEGORY_KEYWORDS = {
-    "ডিজিটাল সেবা": ["সাবস্ক্রিপশন", "ভিপিএন", "ক্লাউড", "সফটওয়্যার", "ইন্টারনেট প্যাকেজ", "গিফট কার্ড"],
+    "ডিজিটাল সেবা": ["সাবস্ক্রিপশন", "ভিপিএন", "ক্লাউড", "সফটওয়্যার", "ইন্টারনেট প্যাকেজ", "গিফট কার্ড", "রিচার্জ সেবা", "মোবাইল রিচার্জ"],
     "ইলেকট্রনিক্স": ["চার্জার", "পাওয়ার ব্যাংক", "ওয়েবক্যাম", "ফোন", "হেডফোন", "ইয়ারফোন", "ফ্রিজ", "ট্যাবলেট", "ল্যাপটপ", "স্মার্ট ওয়াচ"],
     "স্বাস্থ্য ও ঔষধ": ["স্যানিটাইজার", "ব্যান্ডেজ", "থার্মোমিটার", "ব্লাড প্রেশার", "পালস অক্সিমিটার", "মাস্ক"],
     "ফ্যাশন ও পোশাক": ["জিন্স", "শাড়ি", "জুতা", "স্কার্ফ", "পাঞ্জাবি", "পোশাক"],
@@ -59,7 +59,9 @@ CATEGORY_KEYWORDS = {
 
 BRAND_RE = re.compile(r"([\u0980-\u09FFA-Za-z]+) ব্র্যান্ডের গুণগত মানের পণ্য")
 WARRANTY_RE = re.compile(r"এই পণ্যের ([\u0980-\u09FFA-Za-z]+) ওয়ারেন্টি রয়েছে")
-RATING_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?) স্টার")
+RATING_RE = re.compile(r"([0-9০-৯]+(?:[\.,٫][0-9০-৯]+)?)\s*স্টার")
+
+BENGALI_DIGIT_MAP = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
 
 
 def _split_blocks(raw_text: str) -> List[str]:
@@ -141,7 +143,8 @@ def _extract_attributes(sentences: List[str]) -> Dict[str, object]:
         rating_match = RATING_RE.search(s)
         if rating_match:
             try:
-                rating = float(rating_match.group(1))
+                raw = rating_match.group(1).translate(BENGALI_DIGIT_MAP).replace("٫", ".").replace(",", ".")
+                rating = float(raw)
             except ValueError:
                 pass
 
@@ -220,14 +223,19 @@ def _canonical_merge(items: List[Dict[str, object]]) -> List[Dict[str, object]]:
         brands = sorted({x for rec in records for x in rec.get("brands", [])})
         warranties = sorted({x for rec in records for x in rec.get("warranties", [])})
 
-        ratings = [r.get("rating") for r in records if isinstance(r.get("rating"), (int, float))]
-        rating = round(sum(ratings) / len(ratings), 2) if ratings else None
+        rating = next(
+            (r.get("rating") for r in records if isinstance(r.get("rating"), (int, float))),
+            None,
+        )
+
+        source_count = len(records)
 
         merged.append(
             {
                 "name": canonical_name,
                 "category": canonical_category,
-                "price": -1,
+                "price": None,
+                "is_price_estimated": False,
                 "unit": "ইউনিট",
                 "description": description,
                 "offers": offers,
@@ -237,7 +245,7 @@ def _canonical_merge(items: List[Dict[str, object]]) -> List[Dict[str, object]]:
                 "warranties": warranties,
                 "rating": rating,
                 "is_digital_service": is_digital,
-                "source_count": len(records),
+                "source_count": source_count,
             }
         )
 

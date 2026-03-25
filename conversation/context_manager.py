@@ -43,12 +43,14 @@ class ConversationContextManager:
         was_rewritten: bool = False,
     ):
         """Record a user turn after retrieval is done."""
-        # Priority 1: extract entity from the original user query (most reliable)
-        query_entity = self.rewriter.extract_and_store_entity(original_query)
+        # Extract entity only from self-contained turns.
+        # For rewritten follow-ups (e.g., "দাম কত?"), keep existing entity to avoid drift.
+        query_entity = None
+        if not was_rewritten:
+            query_entity = self.rewriter.extract_and_store_entity(original_query)
 
-        # Priority 2: only for rewritten follow-up turns, fall back to top retrieved product
-        # to avoid polluting session entity from ambiguous standalone queries (e.g., "দাম কত?")
-        if not query_entity and was_rewritten and retrieved_products:
+        # Best-effort bootstrap for very first vague self-contained turn.
+        if not query_entity and not was_rewritten and not self.rewriter.last_entity and retrieved_products:
             top_product = retrieved_products[0]["name"]
             self.rewriter.update_entity_from_result(top_product)
 

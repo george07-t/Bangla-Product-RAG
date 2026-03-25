@@ -181,27 +181,86 @@ def _rule_based_answer(products: List[dict], query: str) -> str:
     if not products:
         return "দুঃখিত, আপনার চাওয়া পণ্যটি আমাদের কাছে পাওয়া যাচ্ছে না।"
 
-    availability_query = any(kw in query for kw in ["আছে", "বিক্রি", "পাওয়া"])
+    q = (query or "").lower()
+    availability_query = any(kw in q for kw in ["আছে", "বিক্রি", "পাওয়া"])
+    price_query = any(kw in q for kw in ["দাম", "মূল্য", "কত", "price", "প্রাইস", "টাকা"])
+    review_query = any(kw in q for kw in ["রিভিউ", "স্টার", "rating", "রেটিং"])
+    warranty_query = any(kw in q for kw in ["ওয়ারেন্টি", "warranty", "গ্যারান্টি"])
+    brand_query = any(kw in q for kw in ["ব্র্যান্ড", "brand"])
+    payment_query = any(kw in q for kw in ["পেমেন্ট", "ক্যাশ", "বিকাশ", "নগদ", "কার্ড", "cod"])
+    delivery_query = any(kw in q for kw in ["ডেলিভারি", "কুরিয়ার", "পৌঁছাবে"])
+    offer_query = any(kw in q for kw in ["অফার", "ছাড়", "ডিসকাউন্ট"])
+
     if availability_query and not _has_entity_match(products, query):
         return "দুঃখিত, আপনার চাওয়া পণ্যটি আমাদের কাছে পাওয়া যাচ্ছে না।"
 
-    if _is_ambiguous_price_query(query, products):
-        return "কোন পণ্যের দাম জানতে চান? দয়া করে পণ্যের নাম বলুন।"
+    if _is_ambiguous_attribute_query(query, products):
+        return "কোন পণ্য সম্পর্কে জানতে চান? দয়া করে পণ্যের নাম বলুন।"
+
+    if _has_explicit_entity_tokens(query) and not _has_entity_match(products, query):
+        return "দুঃখিত, আপনার উল্লেখ করা পণ্যটি আমাদের বর্তমান তথ্যে পাওয়া যায়নি।"
 
     top = _select_product_for_query(products, query)
     top_price = top.get('price')
     has_price = isinstance(top_price, (int, float)) and float(top_price) > 0
+    is_price_estimated = bool(top.get("is_price_estimated"))
+    rating = top.get("rating")
+    has_rating = isinstance(rating, (int, float)) and float(rating) > 0
+    warranties = [w for w in (top.get("warranties") or []) if w]
+    brands = [b for b in (top.get("brands") or []) if b]
+    payment_methods = [m for m in (top.get("payment_methods") or []) if m]
+    deliveries = [d for d in (top.get("delivery") or []) if d]
+    offers = [o for o in (top.get("offers") or []) if o]
 
-    if any(kw in query for kw in ["দাম", "মূল্য", "কত", "price"]):
+    if review_query:
+        if not has_rating:
+            return f"{top['name']} এর রিভিউ/স্টার তথ্য এই মুহূর্তে পাওয়া যাচ্ছে না।"
+        return f"{top['name']} এর রেটিং {rating} স্টার।"
+
+    if warranty_query:
+        if not warranties:
+            return f"{top['name']} এর ওয়ারেন্টি তথ্য এই মুহূর্তে পাওয়া যাচ্ছে না।"
+        return f"{top['name']} এর ওয়ারেন্টি তথ্য: {', '.join(warranties[:3])}।"
+
+    if brand_query:
+        if not brands:
+            return f"{top['name']} এর ব্র্যান্ড তথ্য এই মুহূর্তে পাওয়া যাচ্ছে না।"
+        return f"{top['name']} এর ব্র্যান্ড তথ্য: {', '.join(brands[:3])}।"
+
+    if payment_query:
+        if not payment_methods:
+            return f"{top['name']} এর পেমেন্ট তথ্য এই মুহূর্তে পাওয়া যাচ্ছে না।"
+        return f"{top['name']} এর পেমেন্ট তথ্য: {payment_methods[0]}।"
+
+    if delivery_query:
+        if not deliveries:
+            return f"{top['name']} এর ডেলিভারি তথ্য এই মুহূর্তে পাওয়া যাচ্ছে না।"
+        return f"{top['name']} এর ডেলিভারি তথ্য: {deliveries[0]}।"
+
+    if offer_query:
+        if not offers:
+            return f"{top['name']} এর অফার তথ্য এই মুহূর্তে পাওয়া যাচ্ছে না।"
+        return f"{top['name']} এর অফার: {offers[0]}।"
+
+    if price_query:
         if not has_price:
             return f"হ্যাঁ, {top['name']} সম্পর্কে তথ্য আছে, তবে এই মুহূর্তে দামের তথ্য পাওয়া যাচ্ছে না।"
+        if is_price_estimated:
+            return (
+                f"{top['name']} এর আনুমানিক মূল্য {top['price']} টাকা প্রতি {top['unit']}। "
+                "সঠিক মূল্য অর্ডারের সময় নিশ্চিত করা হবে।"
+            )
         return (
             f"হ্যাঁ, {top['name']} এর দাম {top['price']} টাকা প্রতি {top['unit']}।"
         )
-    if any(kw in query for kw in ["আছে", "বিক্রি", "পাওয়া"]):
+    if availability_query:
         if not has_price:
             return (
                 f"হ্যাঁ, আমরা {top['name']} বিক্রি করি। দামের তথ্য এই মুহূর্তে পাওয়া যাচ্ছে না।"
+            )
+        if is_price_estimated:
+            return (
+                f"হ্যাঁ, আমরা {top['name']} বিক্রি করি। আনুমানিক মূল্য {top['price']} টাকা প্রতি {top['unit']}।"
             )
         return (
             f"হ্যাঁ, আমরা {top['name']} বিক্রি করি। "
@@ -209,6 +268,8 @@ def _rule_based_answer(products: List[dict], query: str) -> str:
         )
     if not has_price:
         return f"{top['name']} পাওয়া যাচ্ছে। দামের তথ্য এই মুহূর্তে পাওয়া যাচ্ছে না।"
+    if is_price_estimated:
+        return f"{top['name']} পাওয়া যাচ্ছে। আনুমানিক মূল্য: {top['price']} টাকা প্রতি {top['unit']}।"
     return (
         f"{top['name']} পাওয়া যাচ্ছে। মূল্য: {top['price']} টাকা প্রতি {top['unit']}।"
     )
@@ -227,6 +288,8 @@ def _select_product_for_query(products: List[dict], query: str) -> dict:
         "বিক্রি", "সরবরাহ", "দেওয়া", "পাই", "পাব", "বিক্রয়",
         "হ্যাঁ", "না", "ঠিক", "আচ্ছা", "দাম", "মূল্য", "টাকা",
         "price", "প্রাইস",
+        "রিভিউ", "স্টার", "রেটিং", "ওয়ারেন্টি", "ব্র্যান্ড", "পেমেন্ট", "ডেলিভারি", "অফার",
+        "ভালো", "ভাল", "সেরা", "best", "good",
         "এর", "ওর", "তার", "এই", "ওই", "সেই", "একটা", "একটি",
     }
 
@@ -240,52 +303,42 @@ def _select_product_for_query(products: List[dict], query: str) -> dict:
         elif w.endswith("র") and len(w) > 2:
             query_words.append(w[:-1])
 
+    best = products[0]
+    best_score = -1
     for product in products:
-        name = product.get("name", "").lower()
-        if any(w in name for w in query_words):
-            return product
+        name = (product.get("name", "") or "").lower()
+        score = sum(1 for w in query_words if w in name)
+        if score > best_score:
+            best = product
+            best_score = score
 
-    return products[0]
+    return best
 
 
-def _is_ambiguous_price_query(query: str, products: List[dict]) -> bool:
-    """True when query asks price but does not mention a concrete product."""
+def _is_ambiguous_attribute_query(query: str, products: List[dict]) -> bool:
+    """True when query asks a product-specific attribute but misses concrete entity."""
     q = (query or "").lower().strip()
     if not q:
         return False
 
-    if not any(kw in q for kw in ["দাম", "মূল্য", "টাকা", "price", "প্রাইস"]):
+    asks_attribute = any(
+        kw in q
+        for kw in [
+            "দাম", "মূল্য", "টাকা", "price", "প্রাইস",
+            "রিভিউ", "স্টার", "রেটিং", "rating",
+            "ওয়ারেন্টি", "warranty", "ব্র্যান্ড", "brand",
+            "পেমেন্ট", "ডেলিভারি", "অফার", "ছাড়", "ডিসকাউন্ট",
+        ]
+    )
+    if not asks_attribute:
         return False
 
-    stop_words = {
-        "আপনাদের", "আপনার", "আমাদের", "আমার", "তোমার", "তাদের",
-        "কোম্পানি", "দোকান", "এখানে", "এটা", "ওটা", "সেটা",
-        "কি", "কিনা", "কোনো", "কোন", "কত", "কোথায়", "কখন",
-        "আছে", "নেই", "হয়", "করে", "করেন", "পাওয়া", "যায়",
-        "বিক্রি", "সরবরাহ", "দেওয়া", "পাই", "পাব", "বিক্রয়",
-        "হ্যাঁ", "না", "ঠিক", "আচ্ছা", "দাম", "মূল্য", "টাকা", "price", "প্রাইস",
-        "এর", "ওর", "তার", "এই", "ওই", "সেই", "একটা", "একটি",
-    }
+    return not _has_explicit_entity_tokens(q)
 
-    cleaned = re.sub(r"[^\w\s\u0980-\u09FF]", " ", q)
-    raw_words = [w for w in cleaned.split() if len(w) > 1 and w not in stop_words]
-    query_words = set()
-    for w in raw_words:
-        query_words.add(w)
-        if w.endswith("ের") and len(w) > 3:
-            query_words.add(w[:-2])
-        elif w.endswith("র") and len(w) > 2:
-            query_words.add(w[:-1])
 
-    if not query_words:
-        return True
-
-    for product in products:
-        name = (product.get("name") or "").lower()
-        if any(w in name for w in query_words):
-            return False
-
-    return True
+def _is_ambiguous_price_query(query: str, products: List[dict]) -> bool:
+    """Backward-compatible wrapper."""
+    return _is_ambiguous_attribute_query(query, products)
 
 
 def _has_entity_match(products: List[dict], query: str) -> bool:
@@ -297,6 +350,8 @@ def _has_entity_match(products: List[dict], query: str) -> bool:
         "আছে", "নেই", "হয়", "করে", "করেন", "পাওয়া", "যায়",
         "বিক্রি", "সরবরাহ", "দেওয়া", "পাই", "পাব", "বিক্রয়",
         "হ্যাঁ", "না", "ঠিক", "আচ্ছা", "দাম", "মূল্য", "টাকা", "price", "প্রাইস",
+        "রিভিউ", "স্টার", "রেটিং", "ওয়ারেন্টি", "ব্র্যান্ড", "পেমেন্ট", "ডেলিভারি", "অফার",
+        "ভালো", "ভাল", "সেরা", "best", "good",
         "এর", "ওর", "তার", "এই", "ওই", "সেই", "একটা", "একটি",
     }
 
@@ -320,6 +375,34 @@ def _has_entity_match(products: List[dict], query: str) -> bool:
             return True
 
     return False
+
+
+def _has_explicit_entity_tokens(query: str) -> bool:
+    """True if query includes non-generic entity-like tokens."""
+    stop_words = {
+        "আপনাদের", "আপনার", "আমাদের", "আমার", "তোমার", "তাদের",
+        "কোম্পানি", "দোকান", "এখানে", "এটা", "ওটা", "সেটা",
+        "কি", "কিনা", "কোনো", "কোন", "কত", "কোথায়", "কখন",
+        "আছে", "নেই", "হয়", "করে", "করেন", "পাওয়া", "যায়",
+        "বিক্রি", "সরবরাহ", "দেওয়া", "পাই", "পাব", "বিক্রয়",
+        "হ্যাঁ", "না", "ঠিক", "আচ্ছা", "দাম", "মূল্য", "টাকা", "price", "প্রাইস",
+        "রিভিউ", "স্টার", "রেটিং", "rating", "ওয়ারেন্টি", "warranty", "ব্র্যান্ড", "brand",
+        "পেমেন্ট", "ডেলিভারি", "অফার", "ছাড়", "ডিসকাউন্ট",
+        "ভালো", "ভাল", "সেরা", "best", "good",
+        "এর", "ওর", "তার", "এই", "ওই", "সেই", "একটা", "একটি",
+    }
+
+    cleaned = re.sub(r"[^\w\s\u0980-\u09FF]", " ", (query or "").lower())
+    raw_words = [w for w in cleaned.split() if len(w) > 1 and w not in stop_words]
+    query_words = set()
+    for w in raw_words:
+        query_words.add(w)
+        if w.endswith("ের") and len(w) > 3:
+            query_words.add(w[:-2])
+        elif w.endswith("র") and len(w) > 2:
+            query_words.add(w[:-1])
+
+    return bool(query_words)
 
 
 def _to_possessive(noun: str) -> str:

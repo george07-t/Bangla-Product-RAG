@@ -39,6 +39,14 @@ CONTEXT_DEPENDENT_PATTERNS = [
     r"^কখন পাব",
     r"^আর কি কি",
     r"^কি কি আছে",
+    r"^রিভিউ",
+    r"^কত স্টার",
+    r"^স্টার",
+    r"^ওয়ারেন্টি",
+    r"^ব্র্যান্ড",
+    r"^পেমেন্ট",
+    r"^ডেলিভারি",
+    r"^অফার",
 ]
 
 # Patterns to extract product/entity names from a query
@@ -62,6 +70,10 @@ NON_ENTITY_WORDS = {
     "আছে", "নেই", "হয়", "করে", "করেন", "পাওয়া", "যায়",
     "বিক্রি", "সরবরাহ", "দেওয়া", "পাই", "পাব",
     "হ্যাঁ", "না", "ঠিক", "আচ্ছা",
+    "ভালো", "ভাল", "বেশি", "কম", "সেরা", "best", "good",
+    "রিভিউ", "স্টার", "ওয়ারেন্টি", "ব্র্যান্ড", "পেমেন্ট", "ডেলিভারি", "অফার",
+    "দাম", "মূল্য", "টাকা", "প্রাইস", "price", "রেটিং", "অনুযায়ী",
+    "কেমন", "কী", "কত", "কতটা", "কোনটা", "এটার", "ওটার", "সেটার",
 }
 
 
@@ -121,6 +133,14 @@ class QueryRewriter:
                 filtered = [w for w in words if w not in NON_ENTITY_WORDS and len(w) > 1]
                 if filtered:
                     return " ".join(filtered)
+
+        # Fallback: pick noun-like tokens only for availability-style queries.
+        if any(k in query for k in ["আছে", "বিক্রি", "পাওয়া", "সরবরাহ"]):
+            cleaned = re.sub(r"[^\w\s\u0980-\u09FF]", " ", query.lower())
+            words = [w for w in cleaned.split() if len(w) > 1 and w not in NON_ENTITY_WORDS]
+            if words:
+                return " ".join(words)
+
         return None
 
     def _inject_entity(self, query: str, entity: str) -> str:
@@ -129,7 +149,10 @@ class QueryRewriter:
         "দাম কত টাকা?" → "নুডুলসের দাম কত টাকা?"
         """
         # If query starts with দাম/মূল্য/কত, prepend "X এর"
-        price_starters = ["দাম", "মূল্য", "কত", "আর", "কোথায়", "কখন", "এর", "ওর", "price", "প্রাইস"]
+        price_starters = [
+            "দাম", "মূল্য", "কত", "আর", "কোথায়", "কখন", "এর", "ওর", "price", "প্রাইস",
+            "রিভিউ", "স্টার", "ওয়ারেন্টি", "ব্র্যান্ড", "পেমেন্ট", "ডেলিভারি", "অফার",
+        ]
         first_word = query.split()[0] if query.split() else ""
 
         if first_word in price_starters or query.startswith("এর") or query.startswith("ওর"):
