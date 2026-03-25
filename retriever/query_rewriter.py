@@ -23,6 +23,9 @@ CONTEXT_DEPENDENT_PATTERNS = [
     r"^দাম\s",
     r"^দাম\?",
     r"^দাম কত",
+    r"^প্রাইস\s",
+    r"^প্রাইস\?",
+    r"^প্রাইস কত",
     r"^কত টাকা",
     r"^কত দাম",
     r"^মূল্য কত",
@@ -126,7 +129,7 @@ class QueryRewriter:
         "দাম কত টাকা?" → "নুডুলসের দাম কত টাকা?"
         """
         # If query starts with দাম/মূল্য/কত, prepend "X এর"
-        price_starters = ["দাম", "মূল্য", "কত", "আর", "কোথায়", "কখন", "এর", "ওর"]
+        price_starters = ["দাম", "মূল্য", "কত", "আর", "কোথায়", "কখন", "এর", "ওর", "price", "প্রাইস"]
         first_word = query.split()[0] if query.split() else ""
 
         if first_word in price_starters or query.startswith("এর") or query.startswith("ওর"):

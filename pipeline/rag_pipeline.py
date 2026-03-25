@@ -104,6 +104,7 @@ async def query(
         rewritten_query=rewritten_query,
         retrieved_products=products,
         retrieval_ms=retrieval_ms,
+        was_rewritten=was_rewritten,
     )
 
     # ── Step 4: Build LLM messages ──────────────────────────────────────────
@@ -180,16 +181,22 @@ def _rule_based_answer(products: List[dict], query: str) -> str:
     if not products:
         return "দুঃখিত, আপনার চাওয়া পণ্যটি আমাদের কাছে পাওয়া যাচ্ছে না।"
 
+    availability_query = any(kw in query for kw in ["আছে", "বিক্রি", "পাওয়া"])
+    if availability_query and not _has_entity_match(products, query):
+        return "দুঃখিত, আপনার চাওয়া পণ্যটি আমাদের কাছে পাওয়া যাচ্ছে না।"
+
+    if _is_ambiguous_price_query(query, products):
+        return "কোন পণ্যের দাম জানতে চান? দয়া করে পণ্যের নাম বলুন।"
+
     top = _select_product_for_query(products, query)
     top_price = top.get('price')
     has_price = isinstance(top_price, (int, float)) and float(top_price) > 0
 
     if any(kw in query for kw in ["দাম", "মূল্য", "কত", "price"]):
-        poss = _to_possessive(top['name'])
         if not has_price:
-            return f"হ্যাঁ, {poss} তথ্য আমাদের কাছে আছে, তবে এই মুহূর্তে দামের তথ্য পাওয়া যাচ্ছে না।"
+            return f"হ্যাঁ, {top['name']} সম্পর্কে তথ্য আছে, তবে এই মুহূর্তে দামের তথ্য পাওয়া যাচ্ছে না।"
         return (
-            f"হ্যাঁ, {poss} দাম {top['price']} টাকা প্রতি {top['unit']}।"
+            f"হ্যাঁ, {top['name']} এর দাম {top['price']} টাকা প্রতি {top['unit']}।"
         )
     if any(kw in query for kw in ["আছে", "বিক্রি", "পাওয়া"]):
         if not has_price:
@@ -219,6 +226,7 @@ def _select_product_for_query(products: List[dict], query: str) -> dict:
         "আছে", "নেই", "হয়", "করে", "করেন", "পাওয়া", "যায়",
         "বিক্রি", "সরবরাহ", "দেওয়া", "পাই", "পাব", "বিক্রয়",
         "হ্যাঁ", "না", "ঠিক", "আচ্ছা", "দাম", "মূল্য", "টাকা",
+        "price", "প্রাইস",
         "এর", "ওর", "তার", "এই", "ওই", "সেই", "একটা", "একটি",
     }
 
@@ -238,6 +246,80 @@ def _select_product_for_query(products: List[dict], query: str) -> dict:
             return product
 
     return products[0]
+
+
+def _is_ambiguous_price_query(query: str, products: List[dict]) -> bool:
+    """True when query asks price but does not mention a concrete product."""
+    q = (query or "").lower().strip()
+    if not q:
+        return False
+
+    if not any(kw in q for kw in ["দাম", "মূল্য", "টাকা", "price", "প্রাইস"]):
+        return False
+
+    stop_words = {
+        "আপনাদের", "আপনার", "আমাদের", "আমার", "তোমার", "তাদের",
+        "কোম্পানি", "দোকান", "এখানে", "এটা", "ওটা", "সেটা",
+        "কি", "কিনা", "কোনো", "কোন", "কত", "কোথায়", "কখন",
+        "আছে", "নেই", "হয়", "করে", "করেন", "পাওয়া", "যায়",
+        "বিক্রি", "সরবরাহ", "দেওয়া", "পাই", "পাব", "বিক্রয়",
+        "হ্যাঁ", "না", "ঠিক", "আচ্ছা", "দাম", "মূল্য", "টাকা", "price", "প্রাইস",
+        "এর", "ওর", "তার", "এই", "ওই", "সেই", "একটা", "একটি",
+    }
+
+    cleaned = re.sub(r"[^\w\s\u0980-\u09FF]", " ", q)
+    raw_words = [w for w in cleaned.split() if len(w) > 1 and w not in stop_words]
+    query_words = set()
+    for w in raw_words:
+        query_words.add(w)
+        if w.endswith("ের") and len(w) > 3:
+            query_words.add(w[:-2])
+        elif w.endswith("র") and len(w) > 2:
+            query_words.add(w[:-1])
+
+    if not query_words:
+        return True
+
+    for product in products:
+        name = (product.get("name") or "").lower()
+        if any(w in name for w in query_words):
+            return False
+
+    return True
+
+
+def _has_entity_match(products: List[dict], query: str) -> bool:
+    """True if explicit query entity tokens match any retrieved product name."""
+    stop_words = {
+        "আপনাদের", "আপনার", "আমাদের", "আমার", "তোমার", "তাদের",
+        "কোম্পানি", "দোকান", "এখানে", "এটা", "ওটা", "সেটা",
+        "কি", "কিনা", "কোনো", "কোন", "কত", "কোথায়", "কখন",
+        "আছে", "নেই", "হয়", "করে", "করেন", "পাওয়া", "যায়",
+        "বিক্রি", "সরবরাহ", "দেওয়া", "পাই", "পাব", "বিক্রয়",
+        "হ্যাঁ", "না", "ঠিক", "আচ্ছা", "দাম", "মূল্য", "টাকা", "price", "প্রাইস",
+        "এর", "ওর", "তার", "এই", "ওই", "সেই", "একটা", "একটি",
+    }
+
+    cleaned = re.sub(r"[^\w\s\u0980-\u09FF]", " ", (query or "").lower())
+    raw_words = [w for w in cleaned.split() if len(w) > 1 and w not in stop_words]
+
+    query_words = set()
+    for w in raw_words:
+        query_words.add(w)
+        if w.endswith("ের") and len(w) > 3:
+            query_words.add(w[:-2])
+        elif w.endswith("র") and len(w) > 2:
+            query_words.add(w[:-1])
+
+    if not query_words:
+        return False
+
+    for product in products:
+        name = (product.get("name") or "").lower()
+        if any(w in name for w in query_words):
+            return True
+
+    return False
 
 
 def _to_possessive(noun: str) -> str:

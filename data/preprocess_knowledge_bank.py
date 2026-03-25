@@ -103,12 +103,31 @@ def _extract_attributes(sentences: List[str]) -> Dict[str, object]:
     warranties: List[str] = []
     rating = None
 
+    payment_markers = [
+        "ক্যাশ অন ডেলিভারি",
+        "পেমেন্ট গ্রহণযোগ্য",
+        "কার্ডে পেমেন্ট",
+        "নগদ",
+        "বিকাশ",
+    ]
+
+    delivery_markers = [
+        "ডেলিভারি",
+        "হোম ডেলিভারি",
+        "সারা বাংলাদেশে",
+    ]
+
     for s in sentences:
         if "অফার" in s or "বিশেষ মূল্য ছাড়" in s:
             offers.append(s)
-        if "ক্যাশ অন ডেলিভারি" in s or "কার্ডে পেমেন্ট" in s or "বিকাশ" in s:
-            payments.append(s)
-        if "ডেলিভারি" in s:
+
+        # Keep payment extraction strict to avoid contaminating with brand sentences
+        # e.g. "বিকাশ ব্র্যান্ডের গুণগত মানের পণ্য" must NOT be treated as payment.
+        if any(m in s for m in payment_markers):
+            if "ব্র্যান্ডের গুণগত মানের পণ্য" not in s:
+                payments.append(s)
+
+        if any(m in s for m in delivery_markers):
             delivery.append(s)
 
         brand_match = BRAND_RE.search(s)

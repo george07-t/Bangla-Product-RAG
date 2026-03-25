@@ -40,13 +40,15 @@ class ConversationContextManager:
         rewritten_query: str,
         retrieved_products: List[dict],
         retrieval_ms: float,
+        was_rewritten: bool = False,
     ):
         """Record a user turn after retrieval is done."""
         # Priority 1: extract entity from the original user query (most reliable)
         query_entity = self.rewriter.extract_and_store_entity(original_query)
 
-        # Priority 2: if no entity found in query, fall back to top retrieved product
-        if not query_entity and retrieved_products:
+        # Priority 2: only for rewritten follow-up turns, fall back to top retrieved product
+        # to avoid polluting session entity from ambiguous standalone queries (e.g., "দাম কত?")
+        if not query_entity and was_rewritten and retrieved_products:
             top_product = retrieved_products[0]["name"]
             self.rewriter.update_entity_from_result(top_product)
 
